@@ -7,3 +7,10 @@
 // #include <binder/ProcessState.h>
 // #include <binder/IServiceManager.h>
 // #include <binder/IPCThreadState.h>
+
+class SystemService: public android::RefBase
+{
+    public:
+    SystemService();
+    virtual ~SystemService();
+};
