@@ -1,5 +1,6 @@
 
 #include <stdlib.h>
+#include <utils/Log.h>
 #include <utils/RefBase.h>
 #include <binder/TextOutput.h>
 #include <binder/IInterface.h>
@@ -11,100 +12,136 @@
 #include <assert.h>
 #include <iostream>
 
+using namespace android;
 
 
-
-class IServer: public android::IInterface
+class IFace: public android::IInterface
 {
     public:
+    DECLARE_META_INTERFACE(Face);
     enum {
         CMD_SEND = android::IBinder::FIRST_CALL_TRANSACTION,
     };
-    virtual void send(int32_t data) = 0;
-    DECLARE_META_INTERFACE(Server);
+    virtual int32_t send(int32_t data) = 0;
 };
 
 
-class BpService : public android::BpInterface<IServer> 
+class BpFace : public android::BpInterface<IFace> 
 {
     public:
-    BpService(const android::sp<android::IBinder>& impl) : android::BpInterface<IServer>(impl){};
+    BpFace(const android::sp<android::IBinder>& impl) : android::BpInterface<IFace>(impl){};
 
-    virtual void send(int32_t input) {
+    int32_t send(int32_t input) override {
         android::Parcel data, reply;
-        data.writeInterfaceToken(IServer::getInterfaceDescriptor());
+        data.writeInterfaceToken(IFace::getInterfaceDescriptor());
         data.writeInt32(input);
         remote()->transact(CMD_SEND, data, &reply);
+        return reply.readInt32();
     }
 };
 
-class BnService : public android::BnInterface<IServer>
+
+//Use this macro at end of cpp defination file
+IMPLEMENT_META_INTERFACE(Face,"IFace");
+
+
+// IFace::IFace(){};
+// IFace::~IFace(){};
+// const android::String16 IFace::descriptor("IFace");
+// const android::String16& IFace::getInterfaceDescriptor() const {
+//     return IFace::descriptor;
+// }
+// android::sp<IFace> IFace::asInterface(const android::sp<android::IBinder>& impl) {
+//     android::sp<IFace> iface;
+//         if (impl != NULL) {
+//             iface = static_cast<IFace*>(impl->queryLocalInterface(IFace::descriptor).get());
+//             if (iface == NULL) {
+//                 iface = new BpFace(impl);
+//             }
+//         }
+//         return iface;
+// }
+
+
+
+class Server : public android::BnInterface<IFace>
 {
     public:
-    virtual android::status_t onTransact(uint32_t code, const android::Parcel& data, android::Parcel* reply, uint32_t flags = 0);
-};
-
-android::status_t BnService::onTransact(uint32_t code, const android::Parcel& data, android::Parcel* reply, uint32_t flags) {
-    data.checkInterface(this);
-    // CHECK_INTERFACE(Server,data,reply);
-
-    switch(code) {
-        case CMD_SEND: {
-            auto inData = data.readInt32();
-            std::cout<<"Receiver #### "<<inData<<std::endl;
-            return android::NO_ERROR;
-        } break;
-        default:
-            return android::BBinder::onTransact(code, data, reply, flags);
-    }
-}
-
-
-
-IServer::IServer(){};
-IServer::~IServer(){};
-const android::String16 IServer::descriptor("Server");
-const android::String16& IServer::getInterfaceDescriptor() const {
-    return IServer::descriptor;
-}
-android::sp<IServer> IServer::asInterface(const android::sp<android::IBinder>& impl) {
-    android::sp<IServer> server;
-        if (impl != NULL) {
-            server = static_cast<IServer*>(impl->queryLocalInterface(IServer::descriptor).get());
-            if (server == NULL) {
-                server = new BpService(impl);
-            }
-        }
-        return server;
-}
-
-class Server : public BnService{
-    virtual void send(int32_t data) {
-        std::cout<<"Send #### "<<data<<std::endl;
+    int32_t send(int32_t data) override {
+        std::cout<<data;
+        return data;
     } 
+
+    android::status_t onTransact(uint32_t code, const android::Parcel& data, android::Parcel* reply, uint32_t flags) {
+    CHECK_INTERFACE(IFace,data,reply);
+        switch(code) {
+            case CMD_SEND: {
+                auto inData = data.readInt32();
+                std::cout<<"Receiver #### "<<inData<<std::endl;
+                return android::NO_ERROR;
+            } break;
+            default:
+                return android::BBinder::onTransact(code, data, reply, flags);
+        }
+    }
 };
+
 
 
 class Client {
+    public:
+        class DeathRecipient: public android::IBinder::DeathRecipient {
+            private: Client& mParent;
+            public:
+            explicit DeathRecipient(Client& parent): mParent(parent){};
+            virtual ~DeathRecipient(){};
+
+            void binderDied(const android::wp<android::IBinder>& who) override {
+                std::cout<< "binderDied" <<std::endl;
+                mParent.binderDied(who);
+            }
+        };
+
+
     private:
     android::sp<android::IServiceManager> mServiceManager;
     android::sp<android::IBinder> binder;
-    android::sp<IServer> server;
+    android::sp<IFace> iface;
+    android::sp<DeathRecipient> deathRecipient;
 
     public:
+        
+
     Client() {
         mServiceManager = android::defaultServiceManager();
         assert(mServiceManager != 0);
         binder = mServiceManager->getService(android::String16("Server"));
         assert(binder != 0);
-        server = android::interface_cast<IServer>(binder);
-        assert(server != 0);
+        iface = android::interface_cast<IFace>(binder);
+        assert(iface != 0);
+
+        deathRecipient = new DeathRecipient(*this);
+        binder->linkToDeath(deathRecipient);
     }
 
     void send(int32_t data) {
-        server->send(data);
+        iface->send(data);
+    }
+
+    void binderDied(const android::wp<android::IBinder>& who) {
+        if(binder == who){
+            std::cout<<"Client Binder disconnected " <<std::endl;
+        }
+        else {
+            std::cout<<"Else Client Binder disconnected " <<std::endl;
+        }
+    }
+    void testDeath() {
+        binder = nullptr;
     }
 };
+
+
 
 
 
@@ -119,5 +156,6 @@ int main() {
     else {
         Client* client = new Client();
         client->send(10);
+        client->testDeath();
     }
 }
