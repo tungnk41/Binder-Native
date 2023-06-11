@@ -11,6 +11,9 @@
 #include <binder/Parcel.h>
 #include <assert.h>
 #include <iostream>
+#include <thread>      
+#include <chrono>
+#include <tuple>
 
 using namespace android;
 
@@ -77,7 +80,8 @@ class Server : public android::BnInterface<IFace>
         switch(code) {
             case CMD_SEND: {
                 auto inData = data.readInt32();
-                std::cout<<"Receiver #### "<<inData<<std::endl;
+                 std::cout << inData << std::endl;
+                //  exit(0);
                 return android::NO_ERROR;
             } break;
             default:
@@ -86,42 +90,42 @@ class Server : public android::BnInterface<IFace>
     }
 };
 
-
-
-class Client {
-    public:
-        class DeathRecipient: public android::IBinder::DeathRecipient {
-            private: Client& mParent;
+class DeathRecipient: public android::IBinder::DeathRecipient {
             public:
-            explicit DeathRecipient(Client& parent): mParent(parent){};
+            explicit DeathRecipient(){};
             virtual ~DeathRecipient(){};
 
-            void binderDied(const android::wp<android::IBinder>& who) override {
-                std::cout<< "binderDied" <<std::endl;
-                mParent.binderDied(who);
+            virtual void binderDied(const android::wp<android::IBinder>& who) override{
+                std::cout<< "binderDied "<<std::endl;
+                std::ignore = who;
             }
-        };
+};
 
-
-    private:
+class Client : public android::RefBase{
+    public:
     android::sp<android::IServiceManager> mServiceManager;
     android::sp<android::IBinder> binder;
     android::sp<IFace> iface;
     android::sp<DeathRecipient> deathRecipient;
 
     public:
-        
+    Client() {}
 
-    Client() {
-        mServiceManager = android::defaultServiceManager();
+    void init() {
+         mServiceManager = android::defaultServiceManager();
         assert(mServiceManager != 0);
         binder = mServiceManager->getService(android::String16("Server"));
         assert(binder != 0);
         iface = android::interface_cast<IFace>(binder);
         assert(iface != 0);
 
-        deathRecipient = new DeathRecipient(*this);
-        binder->linkToDeath(deathRecipient);
+        deathRecipient = new DeathRecipient();
+        if (binder->linkToDeath(deathRecipient) != android::NO_ERROR) {
+            std::cout << "Failed to register DeathRecipient" << std::endl;
+        }
+        else {
+            std::cout << "register DeathRecipient" << std::endl;
+        }
     }
 
     void send(int32_t data) {
@@ -131,31 +135,34 @@ class Client {
     void binderDied(const android::wp<android::IBinder>& who) {
         if(binder == who){
             std::cout<<"Client Binder disconnected " <<std::endl;
+            iface = nullptr;
         }
         else {
             std::cout<<"Else Client Binder disconnected " <<std::endl;
         }
     }
-    void testDeath() {
-        binder = nullptr;
-    }
 };
 
 
 
-
-
-int main() {
-
-    pid_t pid = fork();
-    if(pid>0) {
+int main(int argc, char **argv) {
+    std::ignore = argv;
+    if(argc == 1) {
+        //client
+        Client* client = new Client();
+        client->init();
+        while(true) {
+            std::this_thread::sleep_for(std::chrono::seconds(1));
+            std::cout <<"From client: " << client->binder->pingBinder()<<std::endl;
+            client->send(10);
+        }
+    }
+    else {
         android::defaultServiceManager()->addService(android::String16("Server"), new Server());
         android::ProcessState::self()->startThreadPool();
         android::IPCThreadState::self()->joinThreadPool();
+
     }
-    else {
-        Client* client = new Client();
-        client->send(10);
-        client->testDeath();
-    }
+
+    return 0;
 }
