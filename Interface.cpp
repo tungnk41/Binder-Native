@@ -1,16 +1,12 @@
 #include "Interface.h"
-#include <iostream>
 
-android::status_t BnService::onTransact(uint32_t code, const android::Parcel& data, android::Parcel* reply, uint32_t flags) {
-    data.checkInterface(this);
 
-    switch(code) {
-        case CMD_SEND: {
-            auto inData = data.readInt32();
-            std::cout<<"#### "<<inData<<std::endl;
-            return android::NO_ERROR;
-        } break;
-        default:
-            return android::BBinder::onTransact(code, data, reply, flags);
+IMPLEMENT_META_INTERFACE(Face,"IFace");
+
+int32_t BpFace::send(int32_t input){
+        android::Parcel data, reply;
+        data.writeInterfaceToken(IFace::getInterfaceDescriptor());
+        data.writeInt32(input);
+        remote()->transact(CMD_SEND, data, &reply);
+        return reply.readInt32();
     }
-}
