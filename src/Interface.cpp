@@ -1,4 +1,4 @@
-#include "Interface.h"
+#include <Interface.h>
 
 
 IMPLEMENT_META_INTERFACE(Face,"IFace");

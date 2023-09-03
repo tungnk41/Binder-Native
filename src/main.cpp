@@ -4,15 +4,17 @@
 #include <thread>      
 #include <chrono>
 #include <tuple>
-#include "Interface.h"
-#include "Server.h"
-#include "Client.h"
+#include <Interface.h>
+#include <Server.h>
+#include <Client.h>
 
 using namespace android;
 
 
 int main(int argc, char **argv) {
     std::ignore = argv;
+    std::ignore = argc;
+    /*
     if(argc == 1) {
         //client
         Client* client = new Client();
@@ -28,6 +30,8 @@ int main(int argc, char **argv) {
         android::ProcessState::self()->startThreadPool();
         android::IPCThreadState::self()->joinThreadPool();
     }
+    */
+    std::cout<<"abcaaa"<<std::endl;
 
     return 0;
 }
